@@ -1,7 +1,7 @@
 import { useParams } from 'react-router-dom'
 import { useJornadas, useMatches } from '@/hooks/useMatches'
 import { usePredictions } from '@/hooks/usePredictions'
-import { useParticipants } from '@/hooks/useParticipants'
+import { useParticipantsSafe } from '@/hooks/useParticipants'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { cn } from '@/lib/utils'
@@ -19,10 +19,11 @@ export default function Transparencia() {
   const { pollaId } = useParams<{ pollaId: string }>()
   const { data: jornadas = [] } = useJornadas(pollaId)
   const { data: matches = [] } = useMatches(pollaId)
-  const { data: participants = [] } = useParticipants(pollaId)
+  const { data: participants = [] } = useParticipantsSafe(pollaId)
   const { data: predictions = [] } = usePredictions(pollaId)
 
-  const authorizedParticipants = participants.filter(p => p.status === 'authorized')
+  // useParticipantsSafe already filters by status='authorized'
+  const authorizedParticipants = participants
 
   // Build prediction lookup: matchId -> participantId -> pick
   const predMap: Record<string, Record<string, { pick: string; is_default: boolean }>> = {}

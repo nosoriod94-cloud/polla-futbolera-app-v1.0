@@ -1,15 +1,15 @@
 import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
-import { useMyPollas, useCreatePolla, useMyParticipatingPollas, usePollaByInviteCode } from '@/hooks/usePollas'
+import { useMyPollas, useCreatePolla, useMyParticipatingPollas, usePollaByInviteCode, useLicense } from '@/hooks/usePollas'
 import { useJoinPolla } from '@/hooks/useParticipants'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { useToast } from '@/hooks/use-toast'
-import { Plus, Shield, Users, Clock, Key } from 'lucide-react'
+import { Plus, Shield, Users, Clock, Lock, AlertTriangle } from 'lucide-react'
 
 const statusLabels: Record<string, { label: string; color: string }> = {
   pending: { label: 'Pendiente de aprobación', color: 'bg-yellow-100 text-yellow-800' },
@@ -24,34 +24,29 @@ export default function Home() {
 
   const { data: adminPollas = [], isLoading: loadingAdmin } = useMyPollas()
   const { data: participatingPollas = [], isLoading: loadingPart } = useMyParticipatingPollas()
+  const { data: license } = useLicense()
   const createPolla = useCreatePolla()
   const joinPolla = useJoinPolla()
 
   // Crear polla
   const [newPollaName, setNewPollaName] = useState('')
-  const [licenseCode, setLicenseCode] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
 
-  // Unirse a polla por invite_code
+  // Unirse a polla
   const [joinCode, setJoinCode] = useState('')
   const [joinApodo, setJoinApodo] = useState('')
   const [joinOpen, setJoinOpen] = useState(false)
 
-  // Buscar polla por invite_code en tiempo real
   const { data: pollaEncontrada } = usePollaByInviteCode(joinCode)
 
   async function handleCreatePolla(e: React.FormEvent) {
     e.preventDefault()
-    if (!newPollaName.trim() || !licenseCode.trim()) return
+    if (!newPollaName.trim()) return
     try {
-      const polla = await createPolla.mutateAsync({
-        nombre: newPollaName.trim(),
-        licenseCode: licenseCode.trim(),
-      })
+      const polla = await createPolla.mutateAsync(newPollaName.trim())
       toast({ title: 'Polla creada', description: `"${polla.nombre}" está lista para configurar.` })
       setCreateOpen(false)
       setNewPollaName('')
-      setLicenseCode('')
       navigate(`/admin/${polla.id}`)
     } catch (err: unknown) {
       toast({ title: 'Error', description: (err as Error).message, variant: 'destructive' })
@@ -72,6 +67,8 @@ export default function Home() {
     }
   }
 
+  const isSuspended = license !== undefined && license !== null && !license.isActive
+
   return (
     <div className="p-4 space-y-6">
       {/* Header */}
@@ -85,55 +82,64 @@ export default function Home() {
         </Button>
       </div>
 
+      {/* Banner: cuenta suspendida */}
+      {isSuspended && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3">
+          <AlertTriangle className="h-5 w-5 text-red-600 shrink-0 mt-0.5" />
+          <div>
+            <p className="text-sm font-medium text-red-800">Cuenta suspendida</p>
+            <p className="text-xs text-red-600 mt-0.5">
+              Tu cuenta ha sido suspendida. Contacta a{' '}
+              <strong>hola@pollafutbolera.online</strong> para resolver la situación.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Mis pollas como admin */}
       <section>
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-lg font-semibold flex items-center gap-2">
-            <Shield className="h-4 w-4 text-blue-600" />
-            Mis pollas (admin)
-          </h2>
-          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-            <DialogTrigger asChild>
-              <Button size="sm" className="bg-blue-700 hover:bg-blue-800">
-                <Plus className="h-4 w-4 mr-1" /> Nueva
-              </Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>Crear nueva polla</DialogTitle>
-              </DialogHeader>
-              <form onSubmit={handleCreatePolla} className="space-y-4 mt-2">
-                <div className="space-y-2">
-                  <Label>Nombre de la polla</Label>
-                  <Input
-                    placeholder="Polla del trabajo, familia Osorio..."
-                    value={newPollaName}
-                    onChange={e => setNewPollaName(e.target.value)}
-                    required
-                  />
-                </div>
-                <div className="space-y-2">
-                  <Label className="flex items-center gap-1.5">
-                    <Key className="h-3.5 w-3.5 text-blue-600" />
-                    Clave de licencia
-                  </Label>
-                  <Input
-                    placeholder="XXXX-XXXX-XXXX"
-                    value={licenseCode}
-                    onChange={e => setLicenseCode(e.target.value.toUpperCase())}
-                    className="font-mono tracking-widest"
-                    required
-                  />
-                  <p className="text-xs text-muted-foreground">
-                    Clave única que te entregó el administrador del sistema.
-                  </p>
-                </div>
-                <Button type="submit" className="w-full" disabled={createPolla.isPending}>
-                  {createPolla.isPending ? 'Verificando y creando...' : 'Crear polla'}
+          <div>
+            <h2 className="text-lg font-semibold flex items-center gap-2">
+              <Shield className="h-4 w-4 text-blue-600" />
+              Mis pollas (admin)
+            </h2>
+            {license && (
+              <p className="text-xs text-muted-foreground mt-0.5">
+                {license.pollasCreated} de {license.pollasLimit} pollas usadas
+              </p>
+            )}
+          </div>
+
+          {/* Solo mostrar botón si tiene licencia activa y puede crear */}
+          {license?.canCreate && (
+            <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+              <DialogTrigger asChild>
+                <Button size="sm" className="bg-blue-700 hover:bg-blue-800">
+                  <Plus className="h-4 w-4 mr-1" /> Nueva
                 </Button>
-              </form>
-            </DialogContent>
-          </Dialog>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Crear nueva polla</DialogTitle>
+                </DialogHeader>
+                <form onSubmit={handleCreatePolla} className="space-y-4 mt-2">
+                  <div className="space-y-2">
+                    <Label>Nombre de la polla</Label>
+                    <Input
+                      placeholder="Polla del trabajo, familia Osorio..."
+                      value={newPollaName}
+                      onChange={e => setNewPollaName(e.target.value)}
+                      required
+                    />
+                  </div>
+                  <Button type="submit" className="w-full" disabled={createPolla.isPending}>
+                    {createPolla.isPending ? 'Creando...' : 'Crear polla'}
+                  </Button>
+                </form>
+              </DialogContent>
+            </Dialog>
+          )}
         </div>
 
         {loadingAdmin ? (
@@ -142,8 +148,30 @@ export default function Home() {
           <Card className="border-dashed">
             <CardContent className="py-8 text-center text-muted-foreground">
               <Shield className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">No has creado ninguna polla todavía.</p>
-              <p className="text-xs mt-1">Necesitas una clave de licencia para crear una.</p>
+              {isSuspended ? (
+                <p className="text-sm text-red-600">Cuenta suspendida.</p>
+              ) : license?.canCreate ? (
+                <>
+                  <p className="text-sm">No has creado ninguna polla todavía.</p>
+                  <p className="text-xs mt-1">Haz clic en "Nueva" para comenzar.</p>
+                </>
+              ) : license && !license.canCreate ? (
+                <>
+                  <Lock className="h-5 w-5 mx-auto mb-1 opacity-40" />
+                  <p className="text-sm font-medium">Límite alcanzado</p>
+                  <p className="text-xs mt-1 text-muted-foreground">
+                    Usaste las {license.pollasLimit} pollas de tu licencia.
+                  </p>
+                </>
+              ) : (
+                <>
+                  <Lock className="h-5 w-5 mx-auto mb-1 opacity-40" />
+                  <p className="text-sm">No tienes una licencia activa.</p>
+                  <p className="text-xs mt-1 text-muted-foreground">
+                    Contacta a <strong>hola@pollafutbolera.online</strong> para adquirir una.
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
         ) : (
@@ -169,6 +197,14 @@ export default function Home() {
                 </CardHeader>
               </Card>
             ))}
+
+            {/* Mostrar mensaje si llegó al límite */}
+            {license && !license.canCreate && !isSuspended && (
+              <p className="text-xs text-center text-muted-foreground py-2">
+                Límite alcanzado ({license.pollasCreated}/{license.pollasLimit} pollas).
+                Contacta a <strong>hola@pollafutbolera.online</strong> para ampliar tu plan.
+              </p>
+            )}
           </div>
         )}
       </section>
@@ -200,7 +236,6 @@ export default function Home() {
                     className="font-mono tracking-widest text-center text-lg"
                     maxLength={8}
                   />
-                  {/* Feedback en tiempo real */}
                   {joinCode.length >= 6 && (
                     <div className={`text-xs rounded-lg px-3 py-2 ${pollaEncontrada ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'}`}>
                       {pollaEncontrada
@@ -243,7 +278,7 @@ export default function Home() {
         ) : (
           <div className="space-y-2">
             {participatingPollas.map(pp => {
-              const polla = pp.pollas as unknown as { id: string; nombre: string; invite_code?: string } | null
+              const polla = pp.pollas as unknown as { id: string; nombre: string } | null
               if (!polla) return null
               const statusInfo = statusLabels[pp.status] ?? statusLabels.pending
               return (

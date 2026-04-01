@@ -3,6 +3,7 @@ import { supabase } from '@/lib/supabase'
 import { useAuth } from '@/context/AuthContext'
 import type { ParticipantStatus } from '@/lib/database.types'
 
+// Para uso del Admin: incluye profiles(nombre_completo) para identificar al usuario
 export function useParticipants(pollaId: string | undefined) {
   return useQuery({
     queryKey: ['participants', pollaId],
@@ -12,6 +13,24 @@ export function useParticipants(pollaId: string | undefined) {
         .from('polla_participants')
         .select('*, profiles(nombre_completo)')
         .eq('polla_id', pollaId!)
+        .order('created_at', { ascending: true })
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+// Para uso público (Transparencia, Posiciones): sin user_id ni email
+export function useParticipantsSafe(pollaId: string | undefined) {
+  return useQuery({
+    queryKey: ['participants_safe', pollaId],
+    enabled: !!pollaId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('polla_participants')
+        .select('id, polla_id, apodo, status')
+        .eq('polla_id', pollaId!)
+        .eq('status', 'authorized')
         .order('created_at', { ascending: true })
       if (error) throw error
       return data
@@ -77,6 +96,111 @@ export function useUpdateParticipantStatus() {
     },
     onSuccess: (_data, { pollaId }) => {
       qc.invalidateQueries({ queryKey: ['participants', pollaId] })
+      qc.invalidateQueries({ queryKey: ['participants_safe', pollaId] })
+    },
+  })
+}
+
+// Admin solicita ampliar el límite de participantes de una polla
+export function useRequestParticipantLimit() {
+  const qc = useQueryClient()
+  const { user } = useAuth()
+  return useMutation({
+    mutationFn: async ({
+      pollaId,
+      currentLimit,
+      requestedLimit,
+    }: {
+      pollaId: string
+      currentLimit: number
+      requestedLimit: number
+    }) => {
+      const { data, error } = await supabase
+        .from('participant_limit_requests')
+        .insert({
+          polla_id: pollaId,
+          admin_id: user!.id,
+          current_limit: currentLimit,
+          requested_limit: requestedLimit,
+          status: 'pending',
+        })
+        .select()
+        .single()
+      if (error) throw error
+      return data
+    },
+    onSuccess: (_data, { pollaId }) => {
+      qc.invalidateQueries({ queryKey: ['limit_requests', pollaId] })
+    },
+  })
+}
+
+// Obtiene el estado de la solicitud de expansión de una polla
+export function useLimitRequest(pollaId: string | undefined) {
+  return useQuery({
+    queryKey: ['limit_requests', pollaId],
+    enabled: !!pollaId,
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from('participant_limit_requests')
+        .select('*')
+        .eq('polla_id', pollaId!)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (error) throw error
+      return data
+    },
+  })
+}
+
+// SuperAdmin: resuelve una solicitud (aprueba o rechaza)
+export function useResolveLimitRequest() {
+  const qc = useQueryClient()
+  const superadminId = import.meta.env.VITE_SUPERADMIN_USER_ID
+  return useMutation({
+    mutationFn: async ({
+      requestId,
+      status,
+      notes,
+    }: {
+      requestId: string
+      status: 'approved' | 'rejected'
+      notes?: string
+    }) => {
+      const { error } = await supabase.rpc('resolve_limit_request', {
+        p_superadmin_id: superadminId,
+        p_request_id: requestId,
+        p_status: status,
+        p_notes: notes ?? null,
+      })
+      if (error) throw new Error(error.message)
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['pending_limit_requests'] })
+    },
+  })
+}
+
+// SuperAdmin: obtiene todas las solicitudes pendientes
+export function usePendingLimitRequests() {
+  return useQuery({
+    queryKey: ['pending_limit_requests'],
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc('get_pending_limit_requests')
+      if (error) throw error
+      return data as Array<{
+        id: string
+        polla_id: string
+        polla_nombre: string
+        admin_id: string
+        admin_email: string
+        current_limit: number
+        requested_limit: number
+        status: string
+        notes: string | null
+        created_at: string
+      }>
     },
   })
 }

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useAuth } from '@/context/AuthContext'
 import { usePolla } from '@/hooks/usePollas'
-import { useParticipants, useUpdateParticipantStatus } from '@/hooks/useParticipants'
+import { useParticipants, useUpdateParticipantStatus, useLimitRequest, useRequestParticipantLimit } from '@/hooks/useParticipants'
 import { useJornadas, useMatches, useCreateJornada, useCreateMatch, useUpdateMatch, useDeleteMatch } from '@/hooks/useMatches'
 import { useAllPredictionsForExport } from '@/hooks/usePredictions'
 import { Button } from '@/components/ui/button'
@@ -14,7 +14,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { useToast } from '@/hooks/use-toast'
-import { ArrowLeft, Plus, Download, Lock, Unlock, CheckCircle, XCircle, Clock, Pencil, Trash2, Copy } from 'lucide-react'
+import { ArrowLeft, Plus, Download, Lock, Unlock, CheckCircle, XCircle, Clock, Pencil, Trash2, Copy, Users, AlertTriangle } from 'lucide-react'
 import type { MatchResult } from '@/lib/database.types'
 import { format } from 'date-fns'
 import { es } from 'date-fns/locale'
@@ -33,6 +33,8 @@ export default function Admin() {
 
   const { data: polla, isLoading: loadingPolla } = usePolla(pollaId)
   const { data: participants = [] } = useParticipants(pollaId)
+  const { data: limitRequest } = useLimitRequest(pollaId)
+  const requestLimit = useRequestParticipantLimit()
   const { data: jornadas = [] } = useJornadas(pollaId)
   const { data: matches = [] } = useMatches(pollaId)
   const { data: predictionsExport } = useAllPredictionsForExport(pollaId)
@@ -59,6 +61,11 @@ export default function Admin() {
   // Edit match
   const [editMatch, setEditMatch] = useState<typeof matches[0] | null>(null)
   const [editOpen, setEditOpen] = useState(false)
+
+  // Participant limit
+  const [limitOpen, setLimitOpen] = useState(false)
+  const authorizedCount = participants.filter(p => p.status === 'authorized').length
+  const approvedLimit = limitRequest?.status === 'approved' ? limitRequest.requested_limit : 50
 
   // Not admin → redirect
   if (!loadingPolla && polla && polla.admin_user_id !== user?.id) {
@@ -194,6 +201,20 @@ export default function Admin() {
     toast({ title: 'ID copiado', description: 'Compártelo con los participantes.' })
   }
 
+  async function handleRequestLimit() {
+    try {
+      await requestLimit.mutateAsync({
+        pollaId: pollaId!,
+        currentLimit: approvedLimit,
+        requestedLimit: approvedLimit + 25,
+      })
+      toast({ title: 'Solicitud enviada', description: 'El administrador del sistema revisará tu solicitud.' })
+      setLimitOpen(false)
+    } catch (err: unknown) {
+      toast({ title: 'Error', description: (err as Error).message, variant: 'destructive' })
+    }
+  }
+
   if (loadingPolla) {
     return <div className="p-8 text-center text-muted-foreground">Cargando...</div>
   }
@@ -233,6 +254,76 @@ export default function Admin() {
 
         {/* ===== PARTICIPANTES ===== */}
         <TabsContent value="participantes" className="space-y-3 mt-4">
+          {/* Contador y estado del límite */}
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Users className="h-4 w-4" />
+              <span>
+                <strong className={authorizedCount >= approvedLimit ? 'text-red-600' : authorizedCount >= approvedLimit - 2 ? 'text-orange-600' : 'text-foreground'}>
+                  {authorizedCount}
+                </strong>
+                {' / '}{approvedLimit} participantes autorizados
+              </span>
+            </div>
+            {/* Botón solicitar expansión */}
+            {authorizedCount >= approvedLimit && limitRequest?.status !== 'pending' && limitRequest?.status !== 'approved' && (
+              <Dialog open={limitOpen} onOpenChange={setLimitOpen}>
+                <DialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="text-xs border-orange-300 text-orange-700 hover:bg-orange-50">
+                    <Plus className="h-3 w-3 mr-1" /> Más cupos
+                  </Button>
+                </DialogTrigger>
+                <DialogContent>
+                  <DialogHeader>
+                    <DialogTitle>Solicitar más participantes</DialogTitle>
+                  </DialogHeader>
+                  <div className="space-y-4 mt-2">
+                    <p className="text-sm text-muted-foreground">
+                      Tu polla ha alcanzado el límite de <strong>{approvedLimit} participantes</strong>.
+                      Puedes solicitar ampliar el cupo en 25 participantes adicionales.
+                    </p>
+                    <div className="bg-blue-50 rounded-lg px-4 py-3 text-sm text-blue-800">
+                      <p className="font-medium">Solicitud de expansión</p>
+                      <p className="text-xs mt-1">
+                        Límite actual: {approvedLimit} → Nuevo límite solicitado: {approvedLimit + 25}
+                      </p>
+                    </div>
+                    <p className="text-xs text-muted-foreground">
+                      El administrador del sistema revisará tu solicitud. Te informaremos cuando sea aprobada.
+                    </p>
+                    <Button
+                      className="w-full"
+                      onClick={handleRequestLimit}
+                      disabled={requestLimit.isPending}
+                    >
+                      {requestLimit.isPending ? 'Enviando...' : 'Enviar solicitud'}
+                    </Button>
+                  </div>
+                </DialogContent>
+              </Dialog>
+            )}
+            {limitRequest?.status === 'pending' && (
+              <span className="text-xs px-2 py-1 rounded-full bg-yellow-100 text-yellow-700 font-medium">
+                <Clock className="inline h-3 w-3 mr-1" />Solicitud pendiente
+              </span>
+            )}
+            {limitRequest?.status === 'approved' && (
+              <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700 font-medium">
+                <CheckCircle className="inline h-3 w-3 mr-1" />Límite ampliado
+              </span>
+            )}
+          </div>
+
+          {/* Alerta cuando casi llega al límite */}
+          {authorizedCount >= approvedLimit - 2 && authorizedCount < approvedLimit && (
+            <div className="flex items-start gap-2 bg-orange-50 border border-orange-200 rounded-lg px-3 py-2">
+              <AlertTriangle className="h-4 w-4 text-orange-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-orange-700">
+                Pronto llegarás al límite de {approvedLimit} participantes.
+              </p>
+            </div>
+          )}
+
           {participants.length === 0 ? (
             <Card className="border-dashed">
               <CardContent className="py-8 text-center text-muted-foreground text-sm">

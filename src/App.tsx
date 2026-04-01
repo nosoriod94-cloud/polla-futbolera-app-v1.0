@@ -13,6 +13,7 @@ import Admin from "./pages/Admin";
 import PollaView from "./pages/PollaView";
 import Perfil from "./pages/Perfil";
 import SuperAdmin from "./pages/SuperAdmin";
+import SuperAdminLogin from "./pages/SuperAdminLogin";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient({
@@ -73,7 +74,8 @@ const App = () => (
               }
             />
 
-            {/* Super admin (protegido por VITE_SUPERADMIN_USER_ID) */}
+            {/* Super admin — login propio y panel */}
+            <Route path="/superadmin/login" element={<SuperAdminLogin />} />
             <Route
               path="/superadmin"
               element={
