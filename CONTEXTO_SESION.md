@@ -1,4 +1,5 @@
 # Contexto de sesión — Polla Mundialista 2026
+**Fecha:** Martes 31 de marzo de 2026 (Colombia, UTC-5)
 
 ## Estado actual del proyecto (al cierre de esta sesión)
 
